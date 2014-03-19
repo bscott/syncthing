@@ -1,41 +1,44 @@
-package fileset
+package files
 
 import (
 	"fmt"
 	"reflect"
 	"testing"
+
+	"github.com/calmh/syncthing/scanner"
 )
 
 func TestGlobalSet(t *testing.T) {
 	m := NewSet()
 
-	local := []File{
-		File{Key{"a", 1000}, 0, 0, nil},
-		File{Key{"b", 1000}, 0, 0, nil},
-		File{Key{"c", 1000}, 0, 0, nil},
-		File{Key{"d", 1000}, 0, 0, nil},
+	local := []scanner.File{
+		scanner.File{Name: "a", Version: 1000},
+		scanner.File{Name: "b", Version: 1000},
+		scanner.File{Name: "c", Version: 1000},
+		scanner.File{Name: "d", Version: 1000},
 	}
 
-	remote := []File{
-		File{Key{"a", 1000}, 0, 0, nil},
-		File{Key{"b", 1001}, 0, 0, nil},
-		File{Key{"c", 1002}, 0, 0, nil},
-		File{Key{"e", 1000}, 0, 0, nil},
+	remote := []scanner.File{
+		scanner.File{Name: "a", Version: 1000},
+		scanner.File{Name: "b", Version: 1001},
+		scanner.File{Name: "c", Version: 1002},
+		scanner.File{Name: "e", Version: 1000},
 	}
 
-	expectedGlobal := map[string]Key{
-		"a": local[0].Key,
-		"b": remote[1].Key,
-		"c": remote[2].Key,
-		"d": local[3].Key,
-		"e": remote[3].Key,
+	expectedGlobal := []scanner.File{
+		scanner.File{Name: "a", Version: 1000},
+		scanner.File{Name: "b", Version: 1001},
+		scanner.File{Name: "c", Version: 1002},
+		scanner.File{Name: "d", Version: 1000},
+		scanner.File{Name: "e", Version: 1000},
 	}
 
 	m.SetLocal(local)
 	m.SetRemote(1, remote)
 
-	if !reflect.DeepEqual(m.globalKey, expectedGlobal) {
-		t.Errorf("Global incorrect;\n%v !=\n%v", m.globalKey, expectedGlobal)
+	g := m.Global()
+	if !reflect.DeepEqual(g, expectedGlobal) {
+		t.Errorf("Global incorrect;\n%v !=\n%v", g, expectedGlobal)
 	}
 
 	if lb := len(m.files); lb != 7 {
@@ -46,14 +49,14 @@ func TestGlobalSet(t *testing.T) {
 func BenchmarkSetLocal10k(b *testing.B) {
 	m := NewSet()
 
-	var local []File
+	var local []scanner.File
 	for i := 0; i < 10000; i++ {
-		local = append(local, File{Key{fmt.Sprintf("file%d"), 1000}, 0, 0, nil})
+		local = append(local, scanner.File{Name: fmt.Sprintf("file%d"), Version: 1000})
 	}
 
-	var remote []File
+	var remote []scanner.File
 	for i := 0; i < 10000; i++ {
-		remote = append(remote, File{Key{fmt.Sprintf("file%d"), 1000}, 0, 0, nil})
+		remote = append(remote, scanner.File{Name: fmt.Sprintf("file%d"), Version: 1000})
 	}
 
 	m.SetRemote(1, remote)
@@ -67,14 +70,14 @@ func BenchmarkSetLocal10k(b *testing.B) {
 func BenchmarkSetLocal10(b *testing.B) {
 	m := NewSet()
 
-	var local []File
+	var local []scanner.File
 	for i := 0; i < 10; i++ {
-		local = append(local, File{Key{fmt.Sprintf("file%d"), 1000}, 0, 0, nil})
+		local = append(local, scanner.File{Name: fmt.Sprintf("file%d"), Version: 1000})
 	}
 
-	var remote []File
+	var remote []scanner.File
 	for i := 0; i < 10000; i++ {
-		remote = append(remote, File{Key{fmt.Sprintf("file%d"), 1000}, 0, 0, nil})
+		remote = append(remote, scanner.File{Name: fmt.Sprintf("file%d"), Version: 1000})
 	}
 
 	m.SetRemote(1, remote)
@@ -88,14 +91,14 @@ func BenchmarkSetLocal10(b *testing.B) {
 func BenchmarkAddLocal10k(b *testing.B) {
 	m := NewSet()
 
-	var local []File
+	var local []scanner.File
 	for i := 0; i < 10000; i++ {
-		local = append(local, File{Key{fmt.Sprintf("file%d"), 1000}, 0, 0, nil})
+		local = append(local, scanner.File{Name: fmt.Sprintf("file%d"), Version: 1000})
 	}
 
-	var remote []File
+	var remote []scanner.File
 	for i := 0; i < 10000; i++ {
-		remote = append(remote, File{Key{fmt.Sprintf("file%d"), 1000}, 0, 0, nil})
+		remote = append(remote, scanner.File{Name: fmt.Sprintf("file%d"), Version: 1000})
 	}
 
 	m.SetRemote(1, remote)
@@ -105,7 +108,7 @@ func BenchmarkAddLocal10k(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
 		for j := range local {
-			local[j].Key.Version++
+			local[j].Version++
 		}
 		b.StartTimer()
 		m.AddLocal(local)
@@ -115,14 +118,14 @@ func BenchmarkAddLocal10k(b *testing.B) {
 func BenchmarkAddLocal10(b *testing.B) {
 	m := NewSet()
 
-	var local []File
+	var local []scanner.File
 	for i := 0; i < 10; i++ {
-		local = append(local, File{Key{fmt.Sprintf("file%d"), 1000}, 0, 0, nil})
+		local = append(local, scanner.File{Name: fmt.Sprintf("file%d"), Version: 1000})
 	}
 
-	var remote []File
+	var remote []scanner.File
 	for i := 0; i < 10000; i++ {
-		remote = append(remote, File{Key{fmt.Sprintf("file%d"), 1000}, 0, 0, nil})
+		remote = append(remote, scanner.File{Name: fmt.Sprintf("file%d"), Version: 1000})
 	}
 
 	m.SetRemote(1, remote)
@@ -131,7 +134,7 @@ func BenchmarkAddLocal10(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for j := range local {
-			local[j].Key.Version++
+			local[j].Version++
 		}
 		m.AddLocal(local)
 	}
@@ -140,25 +143,25 @@ func BenchmarkAddLocal10(b *testing.B) {
 func TestGlobalReset(t *testing.T) {
 	m := NewSet()
 
-	local := []File{
-		File{Key{"a", 1000}, 0, 0, nil},
-		File{Key{"b", 1000}, 0, 0, nil},
-		File{Key{"c", 1000}, 0, 0, nil},
-		File{Key{"d", 1000}, 0, 0, nil},
+	local := []scanner.File{
+		scanner.File{Name: "a", Version: 1000},
+		scanner.File{Name: "b", Version: 1000},
+		scanner.File{Name: "c", Version: 1000},
+		scanner.File{Name: "d", Version: 1000},
 	}
 
-	remote := []File{
-		File{Key{"a", 1000}, 0, 0, nil},
-		File{Key{"b", 1001}, 0, 0, nil},
-		File{Key{"c", 1002}, 0, 0, nil},
-		File{Key{"e", 1000}, 0, 0, nil},
+	remote := []scanner.File{
+		scanner.File{Name: "a", Version: 1000},
+		scanner.File{Name: "b", Version: 1001},
+		scanner.File{Name: "c", Version: 1002},
+		scanner.File{Name: "e", Version: 1000},
 	}
 
-	expectedGlobalKey := map[string]Key{
-		"a": local[0].Key,
-		"b": local[1].Key,
-		"c": local[2].Key,
-		"d": local[3].Key,
+	expectedGlobalKey := map[string]key{
+		"a": keyFor(local[0]),
+		"b": keyFor(local[1]),
+		"c": keyFor(local[2]),
+		"d": keyFor(local[3]),
 	}
 
 	m.SetLocal(local)
@@ -177,24 +180,24 @@ func TestGlobalReset(t *testing.T) {
 func TestNeed(t *testing.T) {
 	m := NewSet()
 
-	local := []File{
-		File{Key{"a", 1000}, 0, 0, nil},
-		File{Key{"b", 1000}, 0, 0, nil},
-		File{Key{"c", 1000}, 0, 0, nil},
-		File{Key{"d", 1000}, 0, 0, nil},
+	local := []scanner.File{
+		scanner.File{Name: "a", Version: 1000},
+		scanner.File{Name: "b", Version: 1000},
+		scanner.File{Name: "c", Version: 1000},
+		scanner.File{Name: "d", Version: 1000},
 	}
 
-	remote := []File{
-		File{Key{"a", 1000}, 0, 0, nil},
-		File{Key{"b", 1001}, 0, 0, nil},
-		File{Key{"c", 1002}, 0, 0, nil},
-		File{Key{"e", 1000}, 0, 0, nil},
+	remote := []scanner.File{
+		scanner.File{Name: "a", Version: 1000},
+		scanner.File{Name: "b", Version: 1001},
+		scanner.File{Name: "c", Version: 1002},
+		scanner.File{Name: "e", Version: 1000},
 	}
 
-	shouldNeed := []File{
-		File{Key{"b", 1001}, 0, 0, nil},
-		File{Key{"c", 1002}, 0, 0, nil},
-		File{Key{"e", 1000}, 0, 0, nil},
+	shouldNeed := []scanner.File{
+		scanner.File{Name: "b", Version: 1001},
+		scanner.File{Name: "c", Version: 1002},
+		scanner.File{Name: "e", Version: 1000},
 	}
 
 	m.SetLocal(local)

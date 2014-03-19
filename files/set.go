@@ -1,116 +1,138 @@
-// Package fileset provides a set type to track local/remote files with newness checks.
-package fileset
+// Package files provides a set type to track local/remote files with newness checks.
+package files
 
-import "sync"
+import "github.com/calmh/syncthing/scanner"
 
-type File struct {
-	Key      Key
-	Modified int64
-	Flags    uint32
-	Data     interface{}
-}
-
-type Key struct {
+type key struct {
 	Name    string
 	Version uint32
 }
 
 type fileRecord struct {
 	Usage int
-	File  File
+	File  scanner.File
 }
 
 type bitset uint64
 
-func (a Key) newerThan(b Key) bool {
+func keyFor(f scanner.File) key {
+	return key{
+		Name:    f.Name,
+		Version: f.Version,
+	}
+}
+
+func (a key) newerThan(b key) bool {
 	return a.Version > b.Version
 }
 
 type Set struct {
-	mutex              sync.RWMutex
-	files              map[Key]fileRecord
-	remoteKey          [64]map[string]Key
+	files              map[key]fileRecord
+	remoteKey          [64]map[string]key
 	globalAvailability map[string]bitset
-	globalKey          map[string]Key
+	globalKey          map[string]key
 }
 
 func NewSet() *Set {
 	var m = Set{
-		files:              make(map[Key]fileRecord),
+		files:              make(map[key]fileRecord),
 		globalAvailability: make(map[string]bitset),
-		globalKey:          make(map[string]Key),
+		globalKey:          make(map[string]key),
 	}
 	return &m
 }
 
-func (m *Set) AddLocal(fs []File) {
-	m.mutex.Lock()
-	m.unlockedAddRemote(0, fs)
-	m.mutex.Unlock()
+func (m *Set) AddLocal(fs []scanner.File) {
+	m.addRemote(0, fs)
 }
 
-func (m *Set) SetLocal(fs []File) {
-	m.mutex.Lock()
-	m.unlockedSetRemote(0, fs)
-	m.mutex.Unlock()
+func (m *Set) SetLocal(fs []scanner.File) {
+	m.setRemote(0, fs)
 }
 
-func (m *Set) AddRemote(cid uint, fs []File) {
+func (m *Set) AddRemote(cid uint, fs []scanner.File) {
 	if cid < 1 || cid > 63 {
 		panic("Connection ID must be in the range 1 - 63 inclusive")
 	}
-	m.mutex.Lock()
-	m.unlockedAddRemote(cid, fs)
-	m.mutex.Unlock()
+	m.addRemote(cid, fs)
 }
 
-func (m *Set) SetRemote(cid uint, fs []File) {
+func (m *Set) SetRemote(cid uint, fs []scanner.File) {
 	if cid < 1 || cid > 63 {
 		panic("Connection ID must be in the range 1 - 63 inclusive")
 	}
-	m.mutex.Lock()
-	m.unlockedSetRemote(cid, fs)
-	m.mutex.Unlock()
+	m.setRemote(cid, fs)
 }
 
-func (m *Set) unlockedAddRemote(cid uint, fs []File) {
+func (m *Set) Need(cid uint) []scanner.File {
+	var fs []scanner.File
+	for name, gk := range m.globalKey {
+		if gk.newerThan(m.remoteKey[cid][name]) {
+			fs = append(fs, m.files[gk].File)
+		}
+	}
+	return fs
+}
+
+func (m *Set) Have(cid uint) []scanner.File {
+	var fs []scanner.File
+	for _, rk := range m.remoteKey[cid] {
+		fs = append(fs, m.files[rk].File)
+	}
+	return fs
+}
+
+func (m *Set) Global() []scanner.File {
+	var fs []scanner.File
+	for _, rk := range m.globalKey {
+		fs = append(fs, m.files[rk].File)
+	}
+	return fs
+}
+
+func (m *Set) Availability(name string) bitset {
+	return m.globalAvailability[name]
+}
+
+func (m *Set) addRemote(cid uint, fs []scanner.File) {
 	remFiles := m.remoteKey[cid]
 	for _, f := range fs {
-		n := f.Key.Name
+		n := f.Name
+		fk := keyFor(f)
 
-		if ck, ok := remFiles[n]; ok && ck == f.Key {
+		if ck, ok := remFiles[n]; ok && ck == fk {
 			// The remote already has exactly this file, skip it
 			continue
 		}
 
-		remFiles[n] = f.Key
+		remFiles[n] = fk
 
 		// Keep the block list or increment the usage
-		if br, ok := m.files[f.Key]; !ok {
-			m.files[f.Key] = fileRecord{
+		if br, ok := m.files[fk]; !ok {
+			m.files[fk] = fileRecord{
 				Usage: 1,
 				File:  f,
 			}
 		} else {
 			br.Usage++
-			m.files[f.Key] = br
+			m.files[fk] = br
 		}
 
 		// Update global view
 		gk, ok := m.globalKey[n]
 		switch {
-		case ok && f.Key == gk:
+		case ok && fk == gk:
 			av := m.globalAvailability[n]
 			av |= 1 << cid
 			m.globalAvailability[n] = av
-		case f.Key.newerThan(gk):
-			m.globalKey[n] = f.Key
+		case fk.newerThan(gk):
+			m.globalKey[n] = fk
 			m.globalAvailability[n] = 1 << cid
 		}
 	}
 }
 
-func (m *Set) unlockedSetRemote(cid uint, fs []File) {
+func (m *Set) setRemote(cid uint, fs []scanner.File) {
 	// Decrement usage for all files belonging to this remote, and remove
 	// those that are no longer needed.
 	for _, fk := range m.remoteKey[cid] {
@@ -125,11 +147,11 @@ func (m *Set) unlockedSetRemote(cid uint, fs []File) {
 	}
 
 	// Clear existing remote remoteKey
-	m.remoteKey[cid] = make(map[string]Key)
+	m.remoteKey[cid] = make(map[string]key)
 
 	// Recalculate global based on all remaining remoteKey
 	for n := range m.globalKey {
-		var nk Key    // newest key
+		var nk key    // newest key
 		var na bitset // newest availability
 
 		for i, rem := range m.remoteKey {
@@ -156,19 +178,5 @@ func (m *Set) unlockedSetRemote(cid uint, fs []File) {
 	}
 
 	// Add new remote remoteKey to the mix
-	m.unlockedAddRemote(cid, fs)
-}
-
-func (m *Set) Need(cid uint) []File {
-	var fs []File
-	m.mutex.Lock()
-
-	for name, gk := range m.globalKey {
-		if gk.newerThan(m.remoteKey[cid][name]) {
-			fs = append(fs, m.files[gk].File)
-		}
-	}
-
-	m.mutex.Unlock()
-	return fs
+	m.addRemote(cid, fs)
 }
