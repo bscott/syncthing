@@ -7,6 +7,7 @@ version=$(git describe --always)
 
 build() {
 	go build -ldflags "-w -X main.Version $version" ./cmd/syncthing	
+	go build ./cmd/stcli
 }
 
 prepare() {
